@@ -1,0 +1,117 @@
+name: Build SFX Vox Documentary Pack
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build CC0 SFX pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="$PWD/SFX_VOX_DOCUMENTAL_CC0"
+          TMP="$RUNNER_TEMP/sfx-src"
+          mkdir -p "$ROOT" "$TMP"
+          mkdir -p "$ROOT/01_UI_Clicks_Ticks" "$ROOT/02_UI_Confirmations" "$ROOT/03_Paper_Pages" "$ROOT/04_Typewriter_Text" "$ROOT/05_Map_Locator" "$ROOT/06_Transitions_Misc" "$ROOT/07_Archive_Extras"
+
+          echo 'Downloading Kenney Interface Sounds (CC0)...'
+          curl -L --fail --retry 3 -o "$TMP/interface.zip" https://github.com/Calinou/kenney-interface-sounds/archive/refs/heads/master.zip
+          unzip -q "$TMP/interface.zip" -d "$TMP/interface"
+          find "$TMP/interface" -type f \( -iname '*.wav' -o -iname '*.ogg' \) -print0 | while IFS= read -r -d '' f; do
+            b="$(basename "$f")"
+            case "$b" in
+              click_*|select_*|switch_*|tick_*|tap_*|maximize_*|minimize_*|open_*|close_*) cp "$f" "$ROOT/01_UI_Clicks_Ticks/$b" ;;
+              confirmation_*|back_*|error_*|drop_*|bong_*|glass_*|scratch_*|pluck_*|toggle_*) cp "$f" "$ROOT/02_UI_Confirmations/$b" ;;
+              *) cp "$f" "$ROOT/06_Transitions_Misc/$b" ;;
+            esac
+          done
+
+          echo 'Downloading Kenney UI Audio (CC0)...'
+          curl -L --fail --retry 3 -o "$TMP/uiaudio.zip" https://github.com/Calinou/kenney-ui-audio/archive/refs/heads/master.zip
+          unzip -q "$TMP/uiaudio.zip" -d "$TMP/uiaudio"
+          find "$TMP/uiaudio" -type f \( -iname '*.wav' -o -iname '*.ogg' \) -print0 | while IFS= read -r -d '' f; do
+            b="ui_$(basename "$f")"
+            cp "$f" "$ROOT/01_UI_Clicks_Ticks/$b"
+          done
+
+          echo 'Downloading Chronicle curated CC0/Public Domain extras...'
+          curl -L --fail --retry 3 -o "$TMP/chronicle.zip" https://github.com/azevedev/chronicle/archive/refs/heads/main.zip
+          unzip -q "$TMP/chronicle.zip" -d "$TMP/chronicle"
+          AUDIO_DIR="$(find "$TMP/chronicle" -type d -path '*/assets/audio' | head -n 1)"
+          test -n "$AUDIO_DIR"
+          for n in page1 page2 page3 page4 page5 rustle crumple unfurl; do
+            for ext in mp3 ogg; do [ -f "$AUDIO_DIR/$n.$ext" ] && cp "$AUDIO_DIR/$n.$ext" "$ROOT/03_Paper_Pages/"; done
+          done
+          for n in key1 key2 key3; do
+            for ext in mp3 ogg; do [ -f "$AUDIO_DIR/$n.$ext" ] && cp "$AUDIO_DIR/$n.$ext" "$ROOT/04_Typewriter_Text/"; done
+          done
+          for n in pin tick ding chime correct; do
+            for ext in mp3 ogg; do [ -f "$AUDIO_DIR/$n.$ext" ] && cp "$AUDIO_DIR/$n.$ext" "$ROOT/05_Map_Locator/"; done
+          done
+          for n in wrong stamp gong hint1 hint2 hint3; do
+            for ext in mp3 ogg; do [ -f "$AUDIO_DIR/$n.$ext" ] && cp "$AUDIO_DIR/$n.$ext" "$ROOT/07_Archive_Extras/"; done
+          done
+
+          cat > "$ROOT/SOURCE_AND_LICENSES.txt" <<'EOF'
+SFX VOX DOCUMENTAL — CC0 / PUBLIC DOMAIN PACK
+
+1) Kenney Interface Sounds
+Source: https://github.com/Calinou/kenney-interface-sounds
+Creator: Kenney
+License: Creative Commons Zero (CC0 1.0)
+Commercial use: permitted. Attribution not required.
+
+2) Kenney UI Audio
+Source: https://github.com/Calinou/kenney-ui-audio
+Creator: Kenney
+License: Creative Commons Zero (CC0 1.0)
+Commercial use: permitted. Attribution not required.
+
+3) Chronicle curated audio subset
+Source: https://github.com/azevedev/chronicle
+The repository's CREDITS.md states that redistributed audio assets are CC0 or Public Domain and identifies their original sources/authors. Included here only as a convenience subset for documentary/editorial editing.
+See: https://github.com/azevedev/chronicle/blob/main/CREDITS.md
+
+NOTES
+- This pack contains sound effects only; music is intentionally excluded.
+- Some source files are included in both MP3 and OGG where available.
+- 'stamp' and other celebratory/strong confirmation effects are placed under Archive_Extras; use cautiously for neutral documentary work.
+EOF
+
+          cat > "$ROOT/README_USE.txt" <<'EOF'
+Suggested editorial/Vox-style usage:
+
+01_UI_Clicks_Ticks   -> typography ticks, UI clicks, card locks, micro-interactions
+02_UI_Confirmations  -> confirmation clicks, dry pops, restrained interface feedback
+03_Paper_Pages       -> paper slide, page flip, rustle, crumple, map unfold
+04_Typewriter_Text   -> typewriter/text-entry texture
+05_Map_Locator       -> locator pings, ticks, subtle confirmation tones
+06_Transitions_Misc -> additional interface/transitional material
+07_Archive_Extras    -> specialty sounds; audition before use
+
+Mixing suggestion:
+Narration > SFX > music. Keep SFX clearly audible but short. Duck music briefly around important effects rather than making the effect excessively loud.
+EOF
+
+          find "$ROOT" -type f | sort > "$ROOT/FILE_LIST.txt"
+          COUNT=$(find "$ROOT" -type f \( -iname '*.wav' -o -iname '*.ogg' -o -iname '*.mp3' \) | wc -l | tr -d ' ')
+          printf '\nTOTAL AUDIO FILES: %s\n' "$COUNT" >> "$ROOT/FILE_LIST.txt"
+          echo "Built $COUNT audio files"
+          zip -qr "$PWD/SFX_VOX_DOCUMENTAL_CC0.zip" "$ROOT"
+
+      - name: Upload ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SFX_VOX_DOCUMENTAL_CC0
+          path: SFX_VOX_DOCUMENTAL_CC0.zip
+          if-no-files-found: error
+          retention-days: 7
